@@ -6,6 +6,12 @@ import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 
+import org.neo.servaaibase.NeoAIException;
+import org.neo.servaaibase.model.AIModel;
+
+import org.neo.servaaiagent.ifc.UtilityAgentIFC;
+import org.neo.servaaiagent.impl.UtilityAgentInMemoryImpl;
+
 @Path("/aigamefactory")
 public class AIGameFactory {
     final static org.apache.log4j.Logger logger = org.apache.log4j.Logger.getLogger(AIGameFactory.class);
@@ -16,10 +22,10 @@ public class AIGameFactory {
     @Produces(MediaType.APPLICATION_JSON)
     public WSModel.AIChatResponse generate(WSModel.AIChatParams params) {
         try {
-            logger.info("Enter into generate()");
             return innerGenerate(params);
         }
         catch(Exception ex) {
+            logger.error(ex.getMessage(), ex);
             return new WSModel.AIChatResponse(false, ex.getMessage());
         }
     }
@@ -28,9 +34,10 @@ public class AIGameFactory {
         String userInput = params.getUserInput();
         String fileContent = params.getFileContent();
 
-        String toReturn = "userInput: " + userInput;
-        toReturn += "\nfileContent: " + fileContent;
-        WSModel.AIChatResponse response = new WSModel.AIChatResponse(true, toReturn);
+        UtilityAgentIFC utilityAgent = UtilityAgentInMemoryImpl.getInstance();
+        AIModel.ChatResponse chatResponse = utilityAgent.generatePageCode(userInput, fileContent);
+
+        WSModel.AIChatResponse response = new WSModel.AIChatResponse(chatResponse.getIsSuccess(), chatResponse.getMessage());
         return response;
     }
 }
