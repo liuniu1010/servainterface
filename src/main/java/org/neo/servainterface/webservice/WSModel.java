@@ -22,6 +22,36 @@ public class WSModel {
         }
     }
 
+    public static class AIGameFactoryParams {
+        String job_id;
+        String requirement;
+        String code;
+
+        public String getJob_id() {
+            return job_id;
+        }
+
+        public void setJob_id(String input_job_id) {
+            job_id = input_job_id;
+        }
+
+        public String getRequirement() {
+            return requirement;
+        }
+
+        public void setRequirement(String input_requirement) {
+            requirement = input_requirement;
+        }
+
+        public String getCode() {
+            return code;
+        }
+
+        public void setCode(String input_code) {
+            code = input_code;
+        }
+    }
+
     public static class AIChatResponse {
         private boolean isSuccess;
         private String message;
@@ -45,6 +75,44 @@ public class WSModel {
 
         public void setMessage(String inputMessage) {
             message = inputMessage;
+        }
+    }
+
+    public static class AIGameFactoryResponse {
+        public final static String JOB_STATUS_INPROGRESS = "inprogress";
+        public final static String JOB_STATUS_DONE = "done";
+        public final static String JOB_STATUS_FAILED = "failed";
+
+        private String job_id;
+        private String job_status;   // inprogress/done/failed 
+        private String code;
+
+        public AIGameFactoryResponse(String input_job_id) {
+            job_id = input_job_id;
+        }
+
+        public String getJob_id() {
+            return job_id;
+        }
+
+        public void setJob_id(String input_job_id) {
+            job_id = input_job_id;
+        }
+
+        public String getJob_status() {
+            return job_status;
+        }
+
+        public void setJob_status(String input_job_status) {
+            job_status = input_job_status;
+        }
+
+        public String getCode() {
+            return code;
+        }
+
+        public void setCode(String input_code) {
+            code = input_code;
         }
     }
 }
