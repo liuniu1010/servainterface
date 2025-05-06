@@ -6,8 +6,7 @@ import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import javax.ws.rs.core.Response;
 
 import org.neo.servaaibase.NeoAIException;
 import org.neo.servaaibase.model.AIModel;
@@ -23,60 +22,72 @@ public class AIGameFactory {
     @Path("/generate")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public WSModel.AIChatResponse generate(@Context HttpServletRequest request, @Context HttpServletResponse response, WSModel.AIChatParams params) {
+    public Response generate(WSModel.AIChatParams params) {
         try {
-            return innerGenerate(params);
+            WSModel.AIChatResponse chatResponse = innerGenerate(params);
+            if(chatResponse.getIsSuccess()) {
+                return generateHttpResponse(Response.Status.OK, chatResponse);
+            }
+            else {
+                return generateHttpResponse(Response.Status.INTERNAL_SERVER_ERROR, chatResponse);
+            }
         }
         catch(Exception ex) {
             logger.error(ex.getMessage(), ex);
-            standardHandleException(ex, response);
+            WSModel.AIChatResponse chatResponse = new WSModel.AIChatResponse(false, ex.getMessage());
+            return generateHttpResponse(decideHttpResponseStatus(ex), chatResponse);
         }
-        return null;
     }
 
     @POST
     @Path("/createjob")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public WSModel.AIGameFactoryResponse createJob(@Context HttpServletRequest request, @Context HttpServletResponse response, WSModel.AIGameFactoryParams params) {
+    public Response createJob(WSModel.AIGameFactoryParams params) {
         try {
-            return innerCreateJob(params);
+            WSModel.AIGameFactoryResponse gameFactoryResponse = innerCreateJob(params);
+            return generateHttpResponse(Response.Status.OK, gameFactoryResponse);
         }
         catch(Exception ex) {
             logger.error(ex.getMessage(), ex);
-            standardHandleException(ex, response);
+            WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(params.getJob_id());
+            gameFactoryResponse.setMessage(ex.getMessage());
+            return generateHttpResponse(decideHttpResponseStatus(ex), gameFactoryResponse);
         }
-        return null;
     }
 
     @POST
-    @Path("/retrievejob")
+    @Path("/checkjob")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public WSModel.AIGameFactoryResponse retrieveJob(@Context HttpServletRequest request, @Context HttpServletResponse response, WSModel.AIGameFactoryParams params) {
+    public Response checkJob(WSModel.AIGameFactoryParams params) {
         try {
-            return innerRetrieveJob(params);
+            WSModel.AIGameFactoryResponse gameFactoryResponse = innerCheckJob(params);
+            return generateHttpResponse(Response.Status.OK, gameFactoryResponse);
         }
         catch(Exception ex) {
             logger.error(ex.getMessage(), ex);
-            standardHandleException(ex, response);
+            WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(params.getJob_id());
+            gameFactoryResponse.setMessage(ex.getMessage());
+            return generateHttpResponse(decideHttpResponseStatus(ex), gameFactoryResponse);
         }
-        return null;
     }
 
     @POST
     @Path("/canceljob")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public WSModel.AIGameFactoryResponse cancelJob(@Context HttpServletRequest request, @Context HttpServletResponse response, WSModel.AIGameFactoryParams params) {
+    public Response cancelJob(WSModel.AIGameFactoryParams params) {
         try {
-            return innerCancelJob(params);
+            WSModel.AIGameFactoryResponse gameFactoryResponse = innerCancelJob(params);
+            return generateHttpResponse(Response.Status.OK, gameFactoryResponse);
         }
         catch(Exception ex) {
             logger.error(ex.getMessage(), ex);
-            standardHandleException(ex, response);
+            WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(params.getJob_id());
+            gameFactoryResponse.setMessage(ex.getMessage());
+            return generateHttpResponse(decideHttpResponseStatus(ex), gameFactoryResponse);
         }
-        return null;
     }
 
     private WSModel.AIChatResponse innerGenerate(WSModel.AIChatParams params) throws Exception {
@@ -91,34 +102,30 @@ public class AIGameFactory {
     }
 
     private WSModel.AIGameFactoryResponse innerCreateJob(WSModel.AIGameFactoryParams params) {
-        return null;
+        WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse("job_1");
+        gameFactoryResponse.setJob_status(WSModel.AIGameFactoryResponse.JOB_STATUS_INPROGRESS);
+        return gameFactoryResponse;
     }
 
-    private WSModel.AIGameFactoryResponse innerRetrieveJob(WSModel.AIGameFactoryParams params) {
-        return null;
+    private WSModel.AIGameFactoryResponse innerCheckJob(WSModel.AIGameFactoryParams params) {
+        WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(params.getJob_id());
+        gameFactoryResponse.setJob_status(WSModel.AIGameFactoryResponse.JOB_STATUS_DONE);
+        return gameFactoryResponse;
     }
 
     private WSModel.AIGameFactoryResponse innerCancelJob(WSModel.AIGameFactoryParams params) {
-        return null;
+        WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(params.getJob_id());
+        gameFactoryResponse.setJob_status(WSModel.AIGameFactoryResponse.JOB_STATUS_CANCELLED);
+        return gameFactoryResponse;
     }
 
-    private void standardHandleException(Exception ex, HttpServletResponse response) {
-        terminateConnection(decideHttpResponseStatus(ex), ex.getMessage(), response);
+    private Response.Status decideHttpResponseStatus(Exception ex) {
+        return Response.Status.INTERNAL_SERVER_ERROR;
     }
 
-    private int decideHttpResponseStatus(Exception ex) {
-        return HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
-    }
-
-    private void terminateConnection(int httpStatus, String message, HttpServletResponse response) {
-        try {
-            response.setStatus(httpStatus);
-            response.getWriter().write(message);
-            response.flushBuffer();
-            return;
-        }
-        catch(Exception ex) {
-            logger.error(ex.getMessage(), ex);
-        }
+    private Response generateHttpResponse(Response.Status httpStatus, Object entity) {
+        return Response.status(httpStatus)
+                       .entity(entity)
+                       .build();
     }
 }

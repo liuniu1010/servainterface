@@ -2,15 +2,15 @@ package org.neo.servainterface.webservice;
 
 public class WSModel {
     public static class AIChatParams {
-        String userInput;
-        String fileContent;
+        String userInput = "";
+        String fileContent = "";
 
         public String getUserInput() {
             return userInput;
         }
 
         public void setUserInput(String inputUserInput) {
-            userInput = inputUserInput;
+            userInput = inputUserInput == null?"":inputUserInput;
         }
 
         public String getFileContent() {
@@ -18,21 +18,21 @@ public class WSModel {
         }
 
         public void setFileContent(String inputFileContent) {
-            fileContent = inputFileContent;
+            fileContent = inputFileContent == null?"":inputFileContent;
         }
     }
 
     public static class AIGameFactoryParams {
-        String job_id;
-        String requirement;
-        String code;
+        String job_id = "";
+        String requirement = "";
+        String code = "";
 
         public String getJob_id() {
             return job_id;
         }
 
         public void setJob_id(String input_job_id) {
-            job_id = input_job_id;
+            job_id = input_job_id == null?"":input_job_id;
         }
 
         public String getRequirement() {
@@ -40,7 +40,7 @@ public class WSModel {
         }
 
         public void setRequirement(String input_requirement) {
-            requirement = input_requirement;
+            requirement = input_requirement == null?"":input_requirement;
         }
 
         public String getCode() {
@@ -48,17 +48,17 @@ public class WSModel {
         }
 
         public void setCode(String input_code) {
-            code = input_code;
+            code = input_code == null?"":input_code;
         }
     }
 
     public static class AIChatResponse {
-        private boolean isSuccess;
-        private String message;
+        private boolean isSuccess = true;
+        private String message = "";
 
         public AIChatResponse(boolean inputIsSuccess, String inputMessage) {
             isSuccess = inputIsSuccess;
-            message = inputMessage;
+            message = inputMessage == null?"":inputMessage;
         }
 
         public boolean getIsSuccess() {
@@ -74,7 +74,7 @@ public class WSModel {
         }
 
         public void setMessage(String inputMessage) {
-            message = inputMessage;
+            message = inputMessage == null?"":inputMessage;
         }
     }
 
@@ -82,13 +82,15 @@ public class WSModel {
         public final static String JOB_STATUS_INPROGRESS = "inprogress";
         public final static String JOB_STATUS_DONE = "done";
         public final static String JOB_STATUS_FAILED = "failed";
+        public final static String JOB_STATUS_CANCELLED = "cancelled";
 
-        private String job_id;
-        private String job_status;   // inprogress/done/failed 
-        private String code;
+        private String job_id = "";
+        private String job_status = "";   // inprogress/done/failed 
+        private String code = "";
+        private String message = "";
 
         public AIGameFactoryResponse(String input_job_id) {
-            job_id = input_job_id;
+            job_id = input_job_id == null?"":input_job_id;
         }
 
         public String getJob_id() {
@@ -96,7 +98,7 @@ public class WSModel {
         }
 
         public void setJob_id(String input_job_id) {
-            job_id = input_job_id;
+            job_id = input_job_id == null?"":input_job_id;
         }
 
         public String getJob_status() {
@@ -104,7 +106,7 @@ public class WSModel {
         }
 
         public void setJob_status(String input_job_status) {
-            job_status = input_job_status;
+            job_status = input_job_status == null?"":input_job_status;
         }
 
         public String getCode() {
@@ -112,7 +114,15 @@ public class WSModel {
         }
 
         public void setCode(String input_code) {
-            code = input_code;
+            code = input_code == null?"":input_code;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+
+        public void setMessage(String inputMessage) {
+            message = inputMessage == null?"":inputMessage;
         }
     }
 }
