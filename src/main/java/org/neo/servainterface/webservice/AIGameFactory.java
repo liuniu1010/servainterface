@@ -63,12 +63,7 @@ public class AIGameFactory {
     public Response checkJob(WSModel.AIGameFactoryParams params) {
         try {
             WSModel.AIGameFactoryResponse gameFactoryResponse = innerCheckJob(params);
-            if(gameFactoryResponse.getJob_status() == WSModel.AIGameFactoryResponse.JOB_STATUS_INPROGRESS) {
-                return generateHttpResponse(Response.Status.ACCEPTED, gameFactoryResponse);
-            }
-            else {
-                return generateHttpResponse(Response.Status.OK, gameFactoryResponse);
-            }
+            return generateHttpResponse(Response.Status.OK, gameFactoryResponse);
         }
         catch(Exception ex) {
             logger.error(ex.getMessage(), ex);
