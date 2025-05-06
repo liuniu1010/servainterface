@@ -1,5 +1,8 @@
 package org.neo.servainterface.webservice;
 
+import java.util.Calendar;
+import java.util.Date;
+
 import javax.ws.rs.Consumes;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
@@ -8,15 +11,34 @@ import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
+import org.neo.servaframe.interfaces.DBConnectionIFC;
+import org.neo.servaframe.interfaces.DBServiceIFC;
+import org.neo.servaframe.interfaces.DBQueryTaskIFC;
+import org.neo.servaframe.interfaces.DBSaveTaskIFC;
+import org.neo.servaframe.model.SQLStruct;
+import org.neo.servaframe.model.VersionEntity;
+import org.neo.servaframe.ServiceFactory;
+
 import org.neo.servaaibase.NeoAIException;
 import org.neo.servaaibase.model.AIModel;
+import org.neo.servaaibase.util.CommonUtil;
 
 import org.neo.servaaiagent.ifc.UtilityAgentIFC;
 import org.neo.servaaiagent.impl.UtilityAgentInMemoryImpl;
 
 @Path("/aigamefactory")
-public class AIGameFactory {
+public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     final static org.apache.log4j.Logger logger = org.apache.log4j.Logger.getLogger(AIGameFactory.class);
+
+    @Override
+    public Object save(DBConnectionIFC dbConnection) {
+        return null;
+    }
+
+    @Override
+    public Object query(DBConnectionIFC dbConnection) {
+        return null;
+    }
 
     @POST
     @Path("/generate")
@@ -102,9 +124,49 @@ public class AIGameFactory {
     }
 
     private WSModel.AIGameFactoryResponse innerCreateJob(WSModel.AIGameFactoryParams params) {
-        WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse("job_1");
-        gameFactoryResponse.setJob_status(WSModel.AIGameFactoryResponse.JOB_STATUS_INPROGRESS);
+        AIModel.NeoJob job = createNeoJobInDB(params);
+
+        WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(job.getJobId());
+        gameFactoryResponse.setJob_status(job.getJobStatus());
         return gameFactoryResponse;
+    }
+
+    private AIModel.NeoJob createNeoJobInDB(WSModel.AIGameFactoryParams params) {
+        DBServiceIFC dbService = ServiceFactory.getDBService();
+        return (AIModel.NeoJob)dbService.executeSaveTask(new AIGameFactory() {
+            @Override
+            public Object save(DBConnectionIFC dbConnection) {
+                try {
+                    return createNeoJobInDB(dbConnection, params);
+                }
+                catch(NeoAIException nex) {
+                    throw nex;
+                }
+                catch(Exception ex) {
+                    throw new NeoAIException(ex.getMessage(), ex);
+                }
+            }
+        });
+    }
+
+    private AIModel.NeoJob createNeoJobInDB(DBConnectionIFC dbConnection, WSModel.AIGameFactoryParams params) throws Exception {
+        int JOB_ID_LENGTH = 10;
+        String JOB_TYPE = "gamefactory";
+        String newJobId = CommonUtil.getRandomString(JOB_ID_LENGTH);
+        String paramsInJson = params.toJson();
+        Date createtime = new Date();
+        int expireMinutes = CommonUtil.getConfigValueAsInt(dbConnection, "jobExpireMinutes");
+        Date expiretime = CommonUtil.addTimeSpan(createtime, Calendar.MINUTE, expireMinutes); 
+
+        AIModel.NeoJob job = new AIModel.NeoJob(newJobId);
+        job.setJobType(JOB_TYPE);
+        job.setJobStatus(WSModel.AIGameFactoryResponse.JOB_STATUS_INPROGRESS);
+        job.setJobParams(paramsInJson);
+        job.setCreatetime(createtime);
+        job.setExpiretime(expiretime);
+
+        dbConnection.insert(job.getVersionEntity());
+        return job;
     }
 
     private WSModel.AIGameFactoryResponse innerCheckJob(WSModel.AIGameFactoryParams params) {

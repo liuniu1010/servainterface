@@ -1,5 +1,16 @@
 package org.neo.servainterface.webservice;
 
+import java.util.Objects;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonSyntaxException;
+
+import org.neo.servaaibase.util.CommonUtil;
+
 public class WSModel {
     public static class AIChatParams {
         String userInput = "";
@@ -49,6 +60,61 @@ public class WSModel {
 
         public void setCode(String input_code) {
             code = input_code == null?"":input_code;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if(this == obj) {
+                return true;
+            }
+
+            if(obj == null) {
+                return false;
+            }
+
+            if(!(obj instanceof WSModel.AIGameFactoryParams)) {
+                return false;
+            }
+
+            WSModel.AIGameFactoryParams params = (WSModel.AIGameFactoryParams)obj;
+
+            return (this.getJob_id().equals(params.getJob_id())) && 
+                   (this.getRequirement().equals(params.getRequirement())) &&
+                   (this.getCode().equals(params.getCode()));
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(job_id, requirement, code);
+        }
+
+        public String toJson() {
+            Gson gson = new Gson();
+            JsonObject jsonBody = new JsonObject();
+
+            jsonBody.addProperty("job_id", getJob_id());
+            jsonBody.addProperty("requirement", getRequirement());
+            jsonBody.addProperty("code", getCode());
+
+            return CommonUtil.alignJson(gson.toJson(jsonBody));
+        }
+
+        public static WSModel.AIGameFactoryParams fromJson(String json) {
+            WSModel.AIGameFactoryParams instance = new WSModel.AIGameFactoryParams();
+
+            JsonElement element = JsonParser.parseString(json);
+            JsonObject jsonObject = element.getAsJsonObject();
+            if(jsonObject.has("job_id")) {
+                instance.setJob_id(jsonObject.get("job_id").getAsString());
+            }
+            if(jsonObject.has("requirement")) {
+                instance.setRequirement(jsonObject.get("requirement").getAsString());
+            }
+            if(jsonObject.has("code")) {
+                instance.setCode(jsonObject.get("code").getAsString());
+            }
+
+            return instance;
         }
     }
 
