@@ -2,6 +2,8 @@ package org.neo.servainterface.webservice;
 
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
+import java.util.ArrayList;
 
 import javax.ws.rs.Consumes;
 import javax.ws.rs.POST;
@@ -153,6 +155,7 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         int JOB_ID_LENGTH = 10;
         String JOB_TYPE = "gamefactory";
         String newJobId = CommonUtil.getRandomString(JOB_ID_LENGTH);
+        params.setJob_id(newJobId);
         String paramsInJson = params.toJson();
         Date createtime = new Date();
         int expireMinutes = CommonUtil.getConfigValueAsInt(dbConnection, "jobExpireMinutes");
@@ -169,16 +172,99 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         return job;
     }
 
-    private WSModel.AIGameFactoryResponse innerCheckJob(WSModel.AIGameFactoryParams params) {
-        WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(params.getJob_id());
-        gameFactoryResponse.setJob_status(WSModel.AIGameFactoryResponse.JOB_STATUS_DONE);
+    private WSModel.AIGameFactoryResponse innerCheckJob(WSModel.AIGameFactoryParams params) throws Exception {
+        AIModel.NeoJob neoJob = checkNeoJobInDB(params);
+
+        WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(neoJob.getJobId());
+        gameFactoryResponse.setJob_status(neoJob.getJobStatus());
+        gameFactoryResponse.setCode(neoJob.getJobOutcome());
+
         return gameFactoryResponse;
     }
 
+    private AIModel.NeoJob checkNeoJobInDB(WSModel.AIGameFactoryParams params) throws Exception {
+        DBServiceIFC dbService = ServiceFactory.getDBService();
+        return (AIModel.NeoJob)dbService.executeQueryTask(new AIGameFactory() {
+            @Override
+            public Object query(DBConnectionIFC dbConnection) {
+                try {
+                    return checkNeoJobInDB(dbConnection, params);
+                }
+                catch(NeoAIException nex) {
+                    throw nex;
+                }
+                catch(Exception ex) {
+                    throw new NeoAIException(ex.getMessage(), ex);
+                }
+            }
+        });
+    }
+
+    private AIModel.NeoJob checkNeoJobInDB(DBConnectionIFC dbConnection, WSModel.AIGameFactoryParams params) throws Exception {
+        String sql = "select id";
+        sql += ", version";
+        sql += ", jobid";
+        sql += ", jobtype";
+        sql += ", jobstatus";
+        sql += ", joboutcome";
+        sql += " from neojob";
+        sql += " where jobid = ?";
+        sql += " and expiretime > ?";
+
+        List<Object> sqlParams = new ArrayList<Object>();
+        sqlParams.add(params.getJob_id());
+        sqlParams.add(new Date());
+        SQLStruct sqlStruct = new SQLStruct(sql, sqlParams);
+
+        VersionEntity versionEntity = dbConnection.querySingleAsVersionEntity(AIModel.NeoJob.ENTITYNAME, sqlStruct);
+        if(versionEntity == null) {
+            throw new NeoAIException(NeoAIException.NEOAIEXCEPTION_JOB_NOTFOUND);
+        }
+
+        AIModel.NeoJob neoJob = new AIModel.NeoJob(versionEntity);
+        return neoJob;
+    }
+
     private WSModel.AIGameFactoryResponse innerCancelJob(WSModel.AIGameFactoryParams params) {
-        WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(params.getJob_id());
-        gameFactoryResponse.setJob_status(WSModel.AIGameFactoryResponse.JOB_STATUS_CANCELLED);
+        AIModel.NeoJob job = cancelNeoJobInDB(params);
+
+        WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(job.getJobId());
+        gameFactoryResponse.setJob_status(job.getJobStatus());
         return gameFactoryResponse;
+    }
+
+    private AIModel.NeoJob cancelNeoJobInDB(WSModel.AIGameFactoryParams params) {
+        DBServiceIFC dbService = ServiceFactory.getDBService();
+        return (AIModel.NeoJob)dbService.executeSaveTask(new AIGameFactory() {
+            @Override
+            public Object save(DBConnectionIFC dbConnection) {
+                try {
+                    return cancelNeoJobInDB(dbConnection, params);
+                }
+                catch(NeoAIException nex) {
+                    throw nex;
+                }
+                catch(Exception ex) {
+                    throw new NeoAIException(ex.getMessage(), ex);
+                }
+            }
+        });
+    }
+
+    private AIModel.NeoJob cancelNeoJobInDB(DBConnectionIFC dbConnection, WSModel.AIGameFactoryParams params) throws Exception {
+        String sql = "update neojob";
+        sql += " set jobstatus = ?";
+        sql += " where jobid = ?";
+
+        List<Object> sqlParams = new ArrayList<Object>();
+        sqlParams.add(WSModel.AIGameFactoryResponse.JOB_STATUS_CANCELLED);
+        sqlParams.add(params.getJob_id());
+
+        SQLStruct sqlStruct = new SQLStruct(sql, sqlParams);
+
+        dbConnection.execute(sqlStruct);
+
+        return checkNeoJobInDB(dbConnection, params);
     }
 
     private Response.Status decideHttpResponseStatus(Exception ex) {
