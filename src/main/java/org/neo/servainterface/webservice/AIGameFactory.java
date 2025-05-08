@@ -5,6 +5,10 @@ import java.util.Date;
 import java.util.List;
 import java.util.ArrayList;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.CompletableFuture;
+
 import javax.ws.rs.Consumes;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
@@ -40,6 +44,15 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     @Override
     public Object query(DBConnectionIFC dbConnection) {
         return null;
+    }
+
+    private static final ExecutorService JOB_POOL =
+        Executors.newFixedThreadPool(
+            Integer.parseInt(System.getProperty("job.pool.size", "32")));
+
+    static {                                    // graceful shutdown
+        Runtime.getRuntime().addShutdownHook(
+            new Thread(() -> JOB_POOL.shutdown()));
     }
 
     @POST
@@ -128,9 +141,22 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     private WSModel.AIGameFactoryResponse innerCreateJob(WSModel.AIGameFactoryParams params) {
         AIModel.NeoJob job = createNeoJobInDB(params);
 
+        CompletableFuture.runAsync(() -> {
+            try {
+                executeJob(job);
+            } 
+            catch (Exception ex) {
+                logger.error(ex.getMessage(), ex);
+            }
+        }, JOB_POOL);
+
         WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(job.getJobId());
         gameFactoryResponse.setJob_status(job.getJobStatus());
         return gameFactoryResponse;
+    }
+
+    private void executeJob(AIModel.NeoJob job) {
+        logger.info("begin to execute job");
     }
 
     private AIModel.NeoJob createNeoJobInDB(WSModel.AIGameFactoryParams params) {
