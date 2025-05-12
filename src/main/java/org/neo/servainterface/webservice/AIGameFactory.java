@@ -16,6 +16,7 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
+import javax.servlet.http.HttpServletRequest;
 
 import org.neo.servaframe.interfaces.DBConnectionIFC;
 import org.neo.servaframe.interfaces.DBServiceIFC;
@@ -30,7 +31,9 @@ import org.neo.servaaibase.model.AIModel;
 import org.neo.servaaibase.util.CommonUtil;
 
 import org.neo.servaaiagent.ifc.UtilityAgentIFC;
+import org.neo.servaaiagent.ifc.AccessAgentIFC;
 import org.neo.servaaiagent.impl.UtilityAgentInMemoryImpl;
+import org.neo.servaaiagent.impl.AccessAgentImpl;
 
 @Path("/aigamefactory")
 public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
@@ -80,8 +83,10 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     @Path("/createjob")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response createJob(WSModel.AIGameFactoryParams params) {
+    public Response createJob(@Context HttpServletRequest request, WSModel.AIGameFactoryParams params) {
         try {
+            String sourceIP = getSourceIP(request);
+            checkAccessibilityOnAction(sourceIP);
             WSModel.AIGameFactoryResponse gameFactoryResponse = innerCreateJob(params);
             return generateHttpResponse(Response.Status.ACCEPTED, gameFactoryResponse);
         }
@@ -97,26 +102,11 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     @Path("/checkjob")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response checkJob(WSModel.AIGameFactoryParams params) {
+    public Response checkJob(@Context HttpServletRequest request, WSModel.AIGameFactoryParams params) {
         try {
+            String sourceIP = getSourceIP(request);
+            checkAccessibilityOnAction(sourceIP);
             WSModel.AIGameFactoryResponse gameFactoryResponse = innerCheckJob(params);
-            return generateHttpResponse(Response.Status.OK, gameFactoryResponse);
-        }
-        catch(Exception ex) {
-            logger.error(ex.getMessage(), ex);
-            WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(params.getJob_id());
-            gameFactoryResponse.setMessage(ex.getMessage());
-            return generateHttpResponse(decideHttpResponseStatus(ex), gameFactoryResponse);
-        }
-    }
-
-    @POST
-    @Path("/canceljob")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response cancelJob(WSModel.AIGameFactoryParams params) {
-        try {
-            WSModel.AIGameFactoryResponse gameFactoryResponse = innerCancelJob(params);
             return generateHttpResponse(Response.Status.OK, gameFactoryResponse);
         }
         catch(Exception ex) {
@@ -339,48 +329,6 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         return neoJob;
     }
 
-    private WSModel.AIGameFactoryResponse innerCancelJob(WSModel.AIGameFactoryParams params) {
-        AIModel.NeoJob job = cancelNeoJobInDB(params);
-
-        WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(job.getJobId());
-        gameFactoryResponse.setJob_status(job.getJobStatus());
-        return gameFactoryResponse;
-    }
-
-    private AIModel.NeoJob cancelNeoJobInDB(WSModel.AIGameFactoryParams params) {
-        DBServiceIFC dbService = ServiceFactory.getDBService();
-        return (AIModel.NeoJob)dbService.executeSaveTask(new AIGameFactory() {
-            @Override
-            public Object save(DBConnectionIFC dbConnection) {
-                try {
-                    return cancelNeoJobInDB(dbConnection, params);
-                }
-                catch(NeoAIException nex) {
-                    throw nex;
-                }
-                catch(Exception ex) {
-                    throw new NeoAIException(ex.getMessage(), ex);
-                }
-            }
-        });
-    }
-
-    private AIModel.NeoJob cancelNeoJobInDB(DBConnectionIFC dbConnection, WSModel.AIGameFactoryParams params) throws Exception {
-        String sql = "update neojob";
-        sql += " set jobstatus = ?";
-        sql += " where jobid = ?";
-
-        List<Object> sqlParams = new ArrayList<Object>();
-        sqlParams.add(WSModel.AIGameFactoryResponse.JOB_STATUS_CANCELLED);
-        sqlParams.add(params.getJob_id());
-
-        SQLStruct sqlStruct = new SQLStruct(sql, sqlParams);
-
-        dbConnection.execute(sqlStruct);
-
-        return checkNeoJobInDB(dbConnection, params);
-    }
-
     private Response.Status decideHttpResponseStatus(Exception ex) {
         if(ex instanceof NeoAIException) {
             NeoAIException nex = (NeoAIException)ex;
@@ -395,5 +343,45 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         return Response.status(httpStatus)
                        .entity(entity)
                        .build();
+    }
+
+    private String getSourceIP(HttpServletRequest request) {
+        String sourceIP = request.getHeader("X-Forwarded-For");
+        if (sourceIP == null || sourceIP.isEmpty()) {
+            sourceIP = request.getRemoteAddr(); // fallback
+        }
+        else {
+            // In case there are multiple IPs (comma-separated), take the first one
+            sourceIP = sourceIP.split(",")[0].trim();
+        }
+        return sourceIP;
+    }
+
+    private void checkAccessibilityOnAction(String sourceIP) {
+        DBServiceIFC dbService = ServiceFactory.getDBService();
+        dbService.executeQueryTask(new DBQueryTaskIFC() {
+            @Override
+            public Object query(DBConnectionIFC dbConnection) {
+                try {
+                    innerCheckAccessibilityOnAction(dbConnection, sourceIP);
+                }
+                catch(NeoAIException nex) {
+                    throw nex;
+                }
+                catch(Exception ex) {
+                    throw new NeoAIException(ex.getMessage(), ex);
+                }
+                return null;
+            }
+        }); 
+    }
+
+    private void innerCheckAccessibilityOnAction(DBConnectionIFC dbConnection, String sourceIP) {
+        AccessAgentIFC accessAgent = AccessAgentImpl.getInstance();
+        if(accessAgent.verifyIP(dbConnection, sourceIP)) {
+        }
+        else {
+            throw new NeoAIException("access denied from servainterface!");
+        }
     }
 }

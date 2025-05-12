@@ -148,7 +148,6 @@ public class WSModel {
         public final static String JOB_STATUS_INPROGRESS = "inprogress";
         public final static String JOB_STATUS_DONE = "done";
         public final static String JOB_STATUS_FAILED = "failed";
-        public final static String JOB_STATUS_CANCELLED = "cancelled";
 
         private String job_id = "";
         private String job_status = "";   // inprogress/done/failed 
