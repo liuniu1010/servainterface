@@ -379,9 +379,9 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     private void innerCheckAccessibilityOnAction(DBConnectionIFC dbConnection, String sourceIP) {
         AccessAgentIFC accessAgent = AccessAgentImpl.getInstance();
         if(accessAgent.verifyIP(dbConnection, sourceIP)) {
+            return;
         }
-        else {
-            throw new NeoAIException("access denied from servainterface!");
-        }
+        // by default, deny access
+        throw new NeoAIException("access denied from servainterface!");
     }
 }
