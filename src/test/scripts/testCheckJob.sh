@@ -1,6 +1,5 @@
-curl -sS -X POST "http://172.17.0.1:18080/api/aigamefactory/checkjob" \
+curl -sS -X GET "http://172.17.0.1:18080/api/v1/aigamefactory/jobs/{jobId}" \
      -H "Content-Type: application/json; charset=utf-8" \
-     -d '{"job_id":"myjob1"}' \
      -o body.json \
      -D headers.txt \
      -w '%{http_code}\n' \

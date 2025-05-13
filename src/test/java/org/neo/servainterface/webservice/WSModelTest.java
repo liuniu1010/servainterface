@@ -51,8 +51,7 @@ public class WSModelTest
 
     public void testJsonConvert() {
         WSModel.AIGameFactoryParams params = new WSModel.AIGameFactoryParams();
-        params.setJob_id("job1");
-        params.setRequirement("the requirement");
+        params.setPrompt("the requirement");
         params.setCode("the code");
 
         String json = params.toJson();

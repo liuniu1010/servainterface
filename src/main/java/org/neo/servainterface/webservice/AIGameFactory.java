@@ -10,9 +10,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.CompletableFuture;
 
 import javax.ws.rs.Consumes;
+import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
+import javax.ws.rs.core.CacheControl;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
@@ -35,7 +38,7 @@ import org.neo.servaaiagent.ifc.AccessAgentIFC;
 import org.neo.servaaiagent.impl.UtilityAgentInMemoryImpl;
 import org.neo.servaaiagent.impl.AccessAgentImpl;
 
-@Path("/aigamefactory")
+@Path("v1/aigamefactory")
 public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     final static org.apache.log4j.Logger logger = org.apache.log4j.Logger.getLogger(AIGameFactory.class);
 
@@ -62,25 +65,23 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     @Path("/generate")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response generate(WSModel.AIChatParams params) {
+    public Response generate(@Context HttpServletRequest request, WSModel.AIGameFactoryParams params) {
         try {
-            WSModel.AIChatResponse chatResponse = innerGenerate(params);
-            if(chatResponse.getIsSuccess()) {
-                return generateHttpResponse(Response.Status.OK, chatResponse);
-            }
-            else {
-                return generateHttpResponse(Response.Status.INTERNAL_SERVER_ERROR, chatResponse);
-            }
+            String sourceIP = getSourceIP(request);
+            checkAccessibilityOnAction(sourceIP);
+            WSModel.AIGameFactoryResponse gameFactoryResponse = innerGenerate(params);
+            return generateHttpResponse(Response.Status.OK, gameFactoryResponse);
         }
         catch(Exception ex) {
             logger.error(ex.getMessage(), ex);
-            WSModel.AIChatResponse chatResponse = new WSModel.AIChatResponse(false, ex.getMessage());
-            return generateHttpResponse(decideHttpResponseStatus(ex), chatResponse);
+            WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse("");
+            gameFactoryResponse.setMessage(ex.getMessage());
+            return generateHttpResponse(decideHttpResponseStatus(ex), gameFactoryResponse);
         }
     }
 
     @POST
-    @Path("/createjob")
+    @Path("/jobs")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response createJob(@Context HttpServletRequest request, WSModel.AIGameFactoryParams params) {
@@ -92,39 +93,46 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         }
         catch(Exception ex) {
             logger.error(ex.getMessage(), ex);
-            WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(params.getJob_id());
+            WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse("");
             gameFactoryResponse.setMessage(ex.getMessage());
             return generateHttpResponse(decideHttpResponseStatus(ex), gameFactoryResponse);
         }
     }
 
-    @POST
-    @Path("/checkjob")
-    @Consumes(MediaType.APPLICATION_JSON)
+    @GET
+    @Path("/jobs/{jobId}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response checkJob(@Context HttpServletRequest request, WSModel.AIGameFactoryParams params) {
+    public Response checkJob(@Context HttpServletRequest request, @PathParam("jobId") String jobId) {
         try {
             String sourceIP = getSourceIP(request);
             checkAccessibilityOnAction(sourceIP);
-            WSModel.AIGameFactoryResponse gameFactoryResponse = innerCheckJob(params);
+            WSModel.AIGameFactoryResponse gameFactoryResponse = innerCheckJob(jobId);
             return generateHttpResponse(Response.Status.OK, gameFactoryResponse);
         }
         catch(Exception ex) {
             logger.error(ex.getMessage(), ex);
-            WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(params.getJob_id());
+            WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(jobId);
             gameFactoryResponse.setMessage(ex.getMessage());
             return generateHttpResponse(decideHttpResponseStatus(ex), gameFactoryResponse);
         }
     }
 
-    private WSModel.AIChatResponse innerGenerate(WSModel.AIChatParams params) throws Exception {
-        String userInput = params.getUserInput();
-        String fileContent = params.getFileContent();
+    private WSModel.AIGameFactoryResponse innerGenerate(WSModel.AIGameFactoryParams params) throws Exception {
+        String prompt = params.getPrompt();
+        String code = params.getCode();
 
         UtilityAgentIFC utilityAgent = UtilityAgentInMemoryImpl.getInstance();
-        AIModel.ChatResponse chatResponse = utilityAgent.generatePageCode(userInput, fileContent);
+        AIModel.ChatResponse chatResponse = utilityAgent.generatePageCode(prompt, code);
 
-        WSModel.AIChatResponse response = new WSModel.AIChatResponse(chatResponse.getIsSuccess(), chatResponse.getMessage());
+        WSModel.AIGameFactoryResponse response = new WSModel.AIGameFactoryResponse("");
+        if(chatResponse.getIsSuccess()) {
+            response.setJobStatus(WSModel.AIGameFactoryResponse.JOB_STATUS_DONE);
+            response.setCode(chatResponse.getMessage());
+        }
+        else {
+            response.setJobStatus(WSModel.AIGameFactoryResponse.JOB_STATUS_FAILED);
+            response.setMessage(chatResponse.getMessage());
+        }
         return response;
     }
 
@@ -141,7 +149,7 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         }, JOB_POOL);
 
         WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(job.getJobId());
-        gameFactoryResponse.setJob_status(job.getJobStatus());
+        gameFactoryResponse.setJobStatus(job.getJobStatus());
         return gameFactoryResponse;
     }
 
@@ -219,11 +227,11 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     private void innerExecuteJob(DBConnectionIFC dbConnection, String jobId) throws Exception {
         WSModel.AIGameFactoryParams gameFactoryParams = extractGameFactoryParamsFromJobId(dbConnection, jobId); 
 
-        String userInput = gameFactoryParams.getRequirement();
-        String fileContent = gameFactoryParams.getCode();
+        String prompt = gameFactoryParams.getPrompt();
+        String code = gameFactoryParams.getCode();
 
         UtilityAgentIFC utilityAgent = UtilityAgentInMemoryImpl.getInstance();
-        AIModel.ChatResponse chatResponse = utilityAgent.generatePageCode(userInput, fileContent);
+        AIModel.ChatResponse chatResponse = utilityAgent.generatePageCode(prompt, code);
         if(chatResponse.getIsSuccess()) {
             AIModel.NeoJob job = new AIModel.NeoJob(jobId);
             job.setJobStatus(WSModel.AIGameFactoryResponse.JOB_STATUS_DONE);
@@ -259,7 +267,6 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         int JOB_ID_LENGTH = 10;
         String JOB_TYPE = "gamefactory";
         String newJobId = CommonUtil.getRandomString(JOB_ID_LENGTH);
-        params.setJob_id(newJobId);
         String paramsInJson = params.toJson();
         Date createtime = new Date();
         int expireMinutes = CommonUtil.getConfigValueAsInt(dbConnection, "jobExpireMinutes");
@@ -276,23 +283,23 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         return job;
     }
 
-    private WSModel.AIGameFactoryResponse innerCheckJob(WSModel.AIGameFactoryParams params) throws Exception {
-        AIModel.NeoJob neoJob = checkNeoJobInDB(params);
+    private WSModel.AIGameFactoryResponse innerCheckJob(String jobId) throws Exception {
+        AIModel.NeoJob neoJob = checkNeoJobInDB(jobId);
 
         WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(neoJob.getJobId());
-        gameFactoryResponse.setJob_status(neoJob.getJobStatus());
+        gameFactoryResponse.setJobStatus(neoJob.getJobStatus());
         gameFactoryResponse.setCode(neoJob.getJobOutcome());
 
         return gameFactoryResponse;
     }
 
-    private AIModel.NeoJob checkNeoJobInDB(WSModel.AIGameFactoryParams params) throws Exception {
+    private AIModel.NeoJob checkNeoJobInDB(String jobId) throws Exception {
         DBServiceIFC dbService = ServiceFactory.getDBService();
         return (AIModel.NeoJob)dbService.executeQueryTask(new AIGameFactory() {
             @Override
             public Object query(DBConnectionIFC dbConnection) {
                 try {
-                    return checkNeoJobInDB(dbConnection, params);
+                    return checkNeoJobInDB(dbConnection, jobId);
                 }
                 catch(NeoAIException nex) {
                     throw nex;
@@ -304,7 +311,7 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         });
     }
 
-    private AIModel.NeoJob checkNeoJobInDB(DBConnectionIFC dbConnection, WSModel.AIGameFactoryParams params) throws Exception {
+    private AIModel.NeoJob checkNeoJobInDB(DBConnectionIFC dbConnection, String jobId) throws Exception {
         String sql = "select id";
         sql += ", version";
         sql += ", jobid";
@@ -316,7 +323,7 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         sql += " and expiretime > ?";
 
         List<Object> sqlParams = new ArrayList<Object>();
-        sqlParams.add(params.getJob_id());
+        sqlParams.add(jobId);
         sqlParams.add(new Date());
         SQLStruct sqlStruct = new SQLStruct(sql, sqlParams);
 
@@ -340,8 +347,12 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     }
 
     private Response generateHttpResponse(Response.Status httpStatus, Object entity) {
+        CacheControl cc = new CacheControl();
+        cc.setNoStore(true);
+
         return Response.status(httpStatus)
                        .entity(entity)
+                       .cacheControl(cc)
                        .build();
     }
 
