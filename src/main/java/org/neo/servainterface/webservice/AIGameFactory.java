@@ -4,6 +4,7 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Enumeration;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -41,6 +42,7 @@ import org.neo.servaaiagent.impl.AccessAgentImpl;
 @Path("v1/aigamefactory")
 public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     final static org.apache.log4j.Logger logger = org.apache.log4j.Logger.getLogger(AIGameFactory.class);
+    final static String RAPIDAPI_SECRET = "X-RapidAPI-Proxy-Secret";
 
     @Override
     public Object save(DBConnectionIFC dbConnection) {
@@ -68,7 +70,14 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     public Response generate(@Context HttpServletRequest request, WSModel.AIGameFactoryParams params) {
         try {
             String sourceIP = getSourceIP(request);
-            checkAccessibilityOnAction(sourceIP);
+            logger.info("sourceIP = " + sourceIP);
+            Enumeration<String> headerNames = request.getHeaderNames();
+            while (headerNames.hasMoreElements()) {
+                String headerName = headerNames.nextElement();
+                String headerValue = request.getHeader(headerName);
+                logger.info("Header: " + headerName + " = " + headerValue);
+            }
+            checkAccessibilityOnAction(request, sourceIP);
             WSModel.AIGameFactoryResponse gameFactoryResponse = innerGenerate(params);
             return generateHttpResponse(Response.Status.OK, gameFactoryResponse);
         }
@@ -87,7 +96,8 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     public Response createJob(@Context HttpServletRequest request, WSModel.AIGameFactoryParams params) {
         try {
             String sourceIP = getSourceIP(request);
-            checkAccessibilityOnAction(sourceIP);
+            logger.info("sourceIP = " + sourceIP);
+            checkAccessibilityOnAction(request, sourceIP);
             WSModel.AIGameFactoryResponse gameFactoryResponse = innerCreateJob(params);
             return generateHttpResponse(Response.Status.ACCEPTED, gameFactoryResponse);
         }
@@ -105,7 +115,8 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     public Response checkJob(@Context HttpServletRequest request, @PathParam("jobId") String jobId) {
         try {
             String sourceIP = getSourceIP(request);
-            checkAccessibilityOnAction(sourceIP);
+            logger.info("sourceIP = " + sourceIP);
+            checkAccessibilityOnAction(request, sourceIP);
             WSModel.AIGameFactoryResponse gameFactoryResponse = innerCheckJob(jobId);
             return generateHttpResponse(Response.Status.OK, gameFactoryResponse);
         }
@@ -353,6 +364,9 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         return Response.status(httpStatus)
                        .entity(entity)
                        .cacheControl(cc)
+                       .header("Access-Control-Allow-Origin", "*")
+                       .header("Access-Control-Allow-Methods", "GET, POST")
+                       .header("Access-Control-Allow-Headers", "Content-Type, Accept")
                        .build();
     }
 
@@ -368,13 +382,13 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         return sourceIP;
     }
 
-    private void checkAccessibilityOnAction(String sourceIP) {
+    private void checkAccessibilityOnAction(HttpServletRequest request, String sourceIP) {
         DBServiceIFC dbService = ServiceFactory.getDBService();
         dbService.executeQueryTask(new DBQueryTaskIFC() {
             @Override
             public Object query(DBConnectionIFC dbConnection) {
                 try {
-                    innerCheckAccessibilityOnAction(dbConnection, sourceIP);
+                    innerCheckAccessibilityOnAction(dbConnection, request, sourceIP);
                 }
                 catch(NeoAIException nex) {
                     throw nex;
@@ -387,9 +401,14 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         }); 
     }
 
-    private void innerCheckAccessibilityOnAction(DBConnectionIFC dbConnection, String sourceIP) {
+    private void innerCheckAccessibilityOnAction(DBConnectionIFC dbConnection, HttpServletRequest request, String sourceIP) {
         AccessAgentIFC accessAgent = AccessAgentImpl.getInstance();
-        if(accessAgent.verifyIP(dbConnection, sourceIP)) {
+        if(accessAgent.verifyRegion(dbConnection, sourceIP)) {
+            return;
+        }
+
+        String headerValue = request.getHeader(RAPIDAPI_SECRET); 
+        if(accessAgent.verifySecret(dbConnection, RAPIDAPI_SECRET, headerValue)) {
             return;
         }
         // by default, deny access
