@@ -412,6 +412,6 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
             return;
         }
         // by default, deny access
-        throw new NeoAIException("access denied from servainterface!");
+        throw new NeoAIException("access denied!");
     }
 }
