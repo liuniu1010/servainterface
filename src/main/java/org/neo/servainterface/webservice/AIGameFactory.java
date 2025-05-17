@@ -69,15 +69,7 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     @Produces(MediaType.APPLICATION_JSON)
     public Response generate(@Context HttpServletRequest request, WSModel.AIGameFactoryParams params) {
         try {
-            String sourceIP = getSourceIP(request);
-            logger.info("sourceIP = " + sourceIP);
-            Enumeration<String> headerNames = request.getHeaderNames();
-            while (headerNames.hasMoreElements()) {
-                String headerName = headerNames.nextElement();
-                String headerValue = request.getHeader(headerName);
-                logger.info("Header: " + headerName + " = " + headerValue);
-            }
-            checkAccessibilityOnAction(request, sourceIP);
+            checkAccessibilityOnAction(request);
             WSModel.AIGameFactoryResponse gameFactoryResponse = innerGenerate(params);
             return generateHttpResponse(Response.Status.OK, gameFactoryResponse);
         }
@@ -95,9 +87,7 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     @Produces(MediaType.APPLICATION_JSON)
     public Response createJob(@Context HttpServletRequest request, WSModel.AIGameFactoryParams params) {
         try {
-            String sourceIP = getSourceIP(request);
-            logger.info("sourceIP = " + sourceIP);
-            checkAccessibilityOnAction(request, sourceIP);
+            checkAccessibilityOnAction(request);
             WSModel.AIGameFactoryResponse gameFactoryResponse = innerCreateJob(params);
             return generateHttpResponse(Response.Status.ACCEPTED, gameFactoryResponse);
         }
@@ -114,9 +104,7 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     @Produces(MediaType.APPLICATION_JSON)
     public Response checkJob(@Context HttpServletRequest request, @PathParam("jobId") String jobId) {
         try {
-            String sourceIP = getSourceIP(request);
-            logger.info("sourceIP = " + sourceIP);
-            checkAccessibilityOnAction(request, sourceIP);
+            checkAccessibilityOnAction(request);
             WSModel.AIGameFactoryResponse gameFactoryResponse = innerCheckJob(jobId);
             return generateHttpResponse(Response.Status.OK, gameFactoryResponse);
         }
@@ -382,13 +370,13 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         return sourceIP;
     }
 
-    private void checkAccessibilityOnAction(HttpServletRequest request, String sourceIP) {
+    private void checkAccessibilityOnAction(HttpServletRequest request) {
         DBServiceIFC dbService = ServiceFactory.getDBService();
         dbService.executeQueryTask(new DBQueryTaskIFC() {
             @Override
             public Object query(DBConnectionIFC dbConnection) {
                 try {
-                    innerCheckAccessibilityOnAction(dbConnection, request, sourceIP);
+                    innerCheckAccessibilityOnAction(dbConnection, request);
                 }
                 catch(NeoAIException nex) {
                     throw nex;
@@ -401,14 +389,26 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         }); 
     }
 
-    private void innerCheckAccessibilityOnAction(DBConnectionIFC dbConnection, HttpServletRequest request, String sourceIP) {
+    private void innerCheckAccessibilityOnAction(DBConnectionIFC dbConnection, HttpServletRequest request) {
+        String sourceIP = getSourceIP(request);
+        String secretValue = request.getHeader(RAPIDAPI_SECRET);
+
+        if(logger.isDebugEnabled()) {
+            logger.debug("sourceIP = " + sourceIP);
+            Enumeration<String> headerNames = request.getHeaderNames();
+            while (headerNames.hasMoreElements()) {
+                String headerName = headerNames.nextElement();
+                String headerValue = request.getHeader(headerName);
+                logger.debug("Header: " + headerName + " = " + headerValue);
+            }
+        }
+
         AccessAgentIFC accessAgent = AccessAgentImpl.getInstance();
         if(accessAgent.verifyRegion(dbConnection, sourceIP)) {
             return;
         }
 
-        String headerValue = request.getHeader(RAPIDAPI_SECRET); 
-        if(accessAgent.verifySecret(dbConnection, RAPIDAPI_SECRET, headerValue)) {
+        if(accessAgent.verifySecret(dbConnection, RAPIDAPI_SECRET, secretValue)) {
             return;
         }
         // by default, deny access
