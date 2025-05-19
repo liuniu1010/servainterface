@@ -13,6 +13,7 @@ import java.util.concurrent.CompletableFuture;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
+import javax.ws.rs.OPTIONS;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
@@ -20,6 +21,7 @@ import javax.ws.rs.core.CacheControl;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
+import javax.ws.rs.core.HttpHeaders;
 import javax.servlet.http.HttpServletRequest;
 
 import org.neo.servaframe.interfaces.DBConnectionIFC;
@@ -63,56 +65,74 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
             new Thread(() -> JOB_POOL.shutdown()));
     }
 
+    @OPTIONS
+    @Path("/generate")
+    public Response handleGeneratePreflight(@Context HttpHeaders headers) {
+        return handlePreflight(headers);
+    }
+
     @POST
     @Path("/generate")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response generate(@Context HttpServletRequest request, WSModel.AIGameFactoryParams params) {
+    public Response generate(@Context HttpServletRequest request, @Context HttpHeaders headers, WSModel.AIGameFactoryParams params) {
         try {
-            checkAccessibilityOnAction(request);
+            checkAccessibilityOnAction(request, headers);
             WSModel.AIGameFactoryResponse gameFactoryResponse = innerGenerate(params);
-            return generateHttpResponse(Response.Status.OK, gameFactoryResponse);
+            return generateHttpResponse(Response.Status.OK, headers, gameFactoryResponse);
         }
         catch(Exception ex) {
             logger.error(ex.getMessage(), ex);
             WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse("");
             gameFactoryResponse.setMessage(ex.getMessage());
-            return generateHttpResponse(decideHttpResponseStatus(ex), gameFactoryResponse);
+            return generateHttpResponse(decideHttpResponseStatus(ex), headers, gameFactoryResponse);
         }
+    }
+
+    @OPTIONS
+    @Path("/jobs")
+    public Response handleCreateJobPreflight(@Context HttpHeaders headers) {
+        return handlePreflight(headers);
     }
 
     @POST
     @Path("/jobs")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response createJob(@Context HttpServletRequest request, WSModel.AIGameFactoryParams params) {
+    public Response createJob(@Context HttpServletRequest request, @Context HttpHeaders headers, WSModel.AIGameFactoryParams params) {
         try {
-            checkAccessibilityOnAction(request);
+            checkAccessibilityOnAction(request, headers);
             WSModel.AIGameFactoryResponse gameFactoryResponse = innerCreateJob(params);
-            return generateHttpResponse(Response.Status.ACCEPTED, gameFactoryResponse);
+            return generateHttpResponse(Response.Status.ACCEPTED, headers, gameFactoryResponse);
         }
         catch(Exception ex) {
             logger.error(ex.getMessage(), ex);
             WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse("");
             gameFactoryResponse.setMessage(ex.getMessage());
-            return generateHttpResponse(decideHttpResponseStatus(ex), gameFactoryResponse);
+            return generateHttpResponse(decideHttpResponseStatus(ex), headers, gameFactoryResponse);
         }
+    }
+
+    @OPTIONS
+    @Path("/jobs/{jobId}")
+    public Response handleCheckJobPreflight(@Context HttpHeaders headers) {
+        return handlePreflight(headers);
     }
 
     @GET
     @Path("/jobs/{jobId}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response checkJob(@Context HttpServletRequest request, @PathParam("jobId") String jobId) {
+    public Response checkJob(@Context HttpServletRequest request, @Context HttpHeaders headers, @PathParam("jobId") String jobId) {
         try {
-            checkAccessibilityOnAction(request);
+            checkAccessibilityOnAction(request, headers);
             WSModel.AIGameFactoryResponse gameFactoryResponse = innerCheckJob(jobId);
-            return generateHttpResponse(Response.Status.OK, gameFactoryResponse);
+            return generateHttpResponse(Response.Status.OK, headers, gameFactoryResponse);
         }
         catch(Exception ex) {
             logger.error(ex.getMessage(), ex);
             WSModel.AIGameFactoryResponse gameFactoryResponse = new WSModel.AIGameFactoryResponse(jobId);
             gameFactoryResponse.setMessage(ex.getMessage());
-            return generateHttpResponse(decideHttpResponseStatus(ex), gameFactoryResponse);
+            return generateHttpResponse(decideHttpResponseStatus(ex), headers, gameFactoryResponse);
         }
     }
 
@@ -345,18 +365,6 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         return Response.Status.INTERNAL_SERVER_ERROR;
     }
 
-    private Response generateHttpResponse(Response.Status httpStatus, Object entity) {
-        CacheControl cc = new CacheControl();
-        cc.setNoStore(true);
-
-        return Response.status(httpStatus)
-                       .entity(entity)
-                       .cacheControl(cc)
-                       .header("Access-Control-Allow-Origin", "*")
-                       .header("Access-Control-Allow-Methods", "GET, POST")
-                       .header("Access-Control-Allow-Headers", "Content-Type, Accept")
-                       .build();
-    }
 
     private String getSourceIP(HttpServletRequest request) {
         String sourceIP = request.getHeader("X-Forwarded-For");
@@ -370,13 +378,13 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         return sourceIP;
     }
 
-    private void checkAccessibilityOnAction(HttpServletRequest request) {
+    private void checkAccessibilityOnAction(HttpServletRequest request, HttpHeaders headers) {
         DBServiceIFC dbService = ServiceFactory.getDBService();
         dbService.executeQueryTask(new DBQueryTaskIFC() {
             @Override
             public Object query(DBConnectionIFC dbConnection) {
                 try {
-                    innerCheckAccessibilityOnAction(dbConnection, request);
+                    innerCheckAccessibilityOnAction(dbConnection, request, headers);
                 }
                 catch(NeoAIException nex) {
                     throw nex;
@@ -389,7 +397,7 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         }); 
     }
 
-    private void innerCheckAccessibilityOnAction(DBConnectionIFC dbConnection, HttpServletRequest request) {
+    private void innerCheckAccessibilityOnAction(DBConnectionIFC dbConnection, HttpServletRequest request, HttpHeaders headers) {
         String sourceIP = getSourceIP(request);
         String secretValue = request.getHeader(RAPIDAPI_SECRET);
 
@@ -401,6 +409,9 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
                 String headerValue = request.getHeader(headerName);
                 logger.debug("Header: " + headerName + " = " + headerValue);
             }
+
+            String requestedHeaders = headers.getRequestHeaders().getFirst("Access-Control-Request-Headers");
+            logger.debug("Access-Control-Request-Headers = " + requestedHeaders);
         }
 
         AccessAgentIFC accessAgent = AccessAgentImpl.getInstance();
@@ -413,5 +424,34 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         }
         // by default, deny access
         throw new NeoAIException("access denied!");
+    }
+
+    private Response handlePreflight(HttpHeaders headers) {
+        String requestedHeaders = headers.getRequestHeaders().getFirst("Access-Control-Request-Headers");
+
+        if (requestedHeaders == null || requestedHeaders.isEmpty()) {
+            requestedHeaders = "Content-Type, Accept, X-RapidAPI-Key, X-RapidAPI-Host";
+        }
+
+        return Response.ok()
+                       .header("Access-Control-Allow-Origin", "*")
+                       .header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                       .header("Access-Control-Allow-Headers", requestedHeaders)
+                       .build();
+    }
+
+    private Response generateHttpResponse(Response.Status httpStatus, HttpHeaders headers, Object entity) {
+        String requestedHeaders = headers.getRequestHeaders().getFirst("Access-Control-Request-Headers");
+    
+        if (requestedHeaders == null || requestedHeaders.isEmpty()) {
+            requestedHeaders = "Content-Type, Accept, X-RapidAPI-Key, X-RapidAPI-Host";
+        }
+
+        return Response.status(httpStatus)
+                       .entity(entity)
+                       .header("Access-Control-Allow-Origin", "*")
+                       .header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                       .header("Access-Control-Allow-Headers", requestedHeaders)
+                       .build();
     }
 }
