@@ -45,6 +45,7 @@ import org.neo.servaaiagent.impl.AccessAgentImpl;
 public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     final static org.apache.log4j.Logger logger = org.apache.log4j.Logger.getLogger(AIGameFactory.class);
     final static String RAPIDAPI_SECRET = "X-RapidAPI-Proxy-Secret";
+    final static String JOB_TYPE = "gamefactory";
 
     @Override
     public Object save(DBConnectionIFC dbConnection) {
@@ -56,9 +57,7 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         return null;
     }
 
-    private static final ExecutorService JOB_POOL =
-        Executors.newFixedThreadPool(
-            Integer.parseInt(System.getProperty("job.pool.size", "32")));
+    private static final ExecutorService JOB_POOL = Executors.newFixedThreadPool(CommonUtil.getConfigValueAsInt("interfaceThreadPoolSize"));
 
     static {                                    // graceful shutdown
         Runtime.getRuntime().addShutdownHook(
@@ -137,22 +136,10 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
     }
 
     private WSModel.AIGameFactoryResponse innerGenerate(WSModel.AIGameFactoryParams params) throws Exception {
-        String prompt = params.getPrompt();
-        String code = params.getCode();
-
-        UtilityAgentIFC utilityAgent = UtilityAgentInMemoryImpl.getInstance();
-        AIModel.ChatResponse chatResponse = utilityAgent.generatePageCode(prompt, code);
-
-        WSModel.AIGameFactoryResponse response = new WSModel.AIGameFactoryResponse("");
-        if(chatResponse.getIsSuccess()) {
-            response.setJobStatus(WSModel.AIGameFactoryResponse.JOB_STATUS_DONE);
-            response.setCode(chatResponse.getMessage());
-        }
-        else {
-            response.setJobStatus(WSModel.AIGameFactoryResponse.JOB_STATUS_FAILED);
-            response.setMessage(chatResponse.getMessage());
-        }
-        return response;
+        AIModel.NeoJob job = createNeoJobInDB(params);
+        executeJob(job.getJobId());
+        WSModel.AIGameFactoryResponse gameFactoryResponse = innerCheckJob(job.getJobId());
+        return gameFactoryResponse;
     }
 
     private WSModel.AIGameFactoryResponse innerCreateJob(WSModel.AIGameFactoryParams params) {
@@ -172,14 +159,13 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         return gameFactoryResponse;
     }
 
-    private void executeJob(String jobId) {
+    private WSModel.AIGameFactoryParams extractGameFactoryParamsFromJobId(String jobId) throws Exception {
         DBServiceIFC dbService = ServiceFactory.getDBService();
-        dbService.executeSaveTask(new AIGameFactory() {
+        return (WSModel.AIGameFactoryParams)dbService.executeQueryTask(new AIGameFactory() {
             @Override
-            public Object save(DBConnectionIFC dbConnection) {
+            public Object query(DBConnectionIFC dbConnection) {
                 try {
-                    executeJob(dbConnection, jobId);
-                    return null;
+                    return extractGameFactoryParamsFromJobId(dbConnection, jobId);
                 }
                 catch(NeoAIException nex) {
                     throw nex;
@@ -196,10 +182,12 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         sql += " from neojob";
         sql += " where jobid = ?";
         sql += " and expiretime > ?";
+        sql += " and jobtype = ?";
 
         List<Object> sqlParams = new ArrayList<Object>();
         sqlParams.add(jobId);
         sqlParams.add(new Date());
+        sqlParams.add(JOB_TYPE);
 
         SQLStruct sqlStruct = new SQLStruct(sql, sqlParams);
 
@@ -207,9 +195,9 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         return WSModel.AIGameFactoryParams.fromJson(jobparamsInJson);
     }
 
-    private void executeJob(DBConnectionIFC dbConnection, String jobId) {
+    private void executeJob(String jobId) {
         try {
-            innerExecuteJob(dbConnection, jobId);
+            innerExecuteJob(jobId);
         }
         catch(Exception ex) {
             AIModel.NeoJob job = new AIModel.NeoJob(jobId);
@@ -217,8 +205,27 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
             job.setJobOutcome("");
             job.setMessage(ex.getMessage());
 
-            fillbackNeoJob(dbConnection, job);
+            fillbackNeoJob(job);
         }
+    }
+
+    private void fillbackNeoJob(AIModel.NeoJob job) {
+        DBServiceIFC dbService = ServiceFactory.getDBService();
+        dbService.executeSaveTask(new AIGameFactory() {
+            @Override
+            public Object save(DBConnectionIFC dbConnection) {
+                try {
+                    fillbackNeoJob(dbConnection, job);
+                    return null;
+                }
+                catch(NeoAIException nex) {
+                    throw nex;
+                }
+                catch(Exception ex) {
+                    throw new NeoAIException(ex.getMessage(), ex);
+                }
+            }
+        });
     }
 
     private void fillbackNeoJob(DBConnectionIFC dbConnection, AIModel.NeoJob job) {
@@ -243,8 +250,8 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         }
     }
 
-    private void innerExecuteJob(DBConnectionIFC dbConnection, String jobId) throws Exception {
-        WSModel.AIGameFactoryParams gameFactoryParams = extractGameFactoryParamsFromJobId(dbConnection, jobId); 
+    private void innerExecuteJob(String jobId) throws Exception {
+        WSModel.AIGameFactoryParams gameFactoryParams = extractGameFactoryParamsFromJobId(jobId); 
 
         String prompt = gameFactoryParams.getPrompt();
         String code = gameFactoryParams.getCode();
@@ -257,10 +264,15 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
             job.setJobOutcome(chatResponse.getMessage());
             job.setMessage("");
 
-            fillbackNeoJob(dbConnection, job);
+            fillbackNeoJob(job);
         }
         else {
-            throw new NeoAIException(chatResponse.getMessage());
+            AIModel.NeoJob job = new AIModel.NeoJob(jobId);
+            job.setJobStatus(WSModel.AIGameFactoryResponse.JOB_STATUS_FAILED);
+            job.setJobOutcome("");
+            job.setMessage(chatResponse.getMessage());
+
+            fillbackNeoJob(job);
         }
     }
 
@@ -284,7 +296,6 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
 
     private AIModel.NeoJob createNeoJobInDB(DBConnectionIFC dbConnection, WSModel.AIGameFactoryParams params) throws Exception {
         int JOB_ID_LENGTH = 10;
-        String JOB_TYPE = "gamefactory";
         String newJobId = CommonUtil.getRandomString(JOB_ID_LENGTH);
         String paramsInJson = params.toJson();
         Date createtime = new Date();
@@ -340,10 +351,12 @@ public class AIGameFactory implements DBQueryTaskIFC, DBSaveTaskIFC {
         sql += " from neojob";
         sql += " where jobid = ?";
         sql += " and expiretime > ?";
+        sql += " and jobtype = ?";
 
         List<Object> sqlParams = new ArrayList<Object>();
         sqlParams.add(jobId);
         sqlParams.add(new Date());
+        sqlParams.add(JOB_TYPE);
         SQLStruct sqlStruct = new SQLStruct(sql, sqlParams);
 
         VersionEntity versionEntity = dbConnection.querySingleAsVersionEntity(AIModel.NeoJob.ENTITYNAME, sqlStruct);
