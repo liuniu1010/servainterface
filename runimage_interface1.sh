@@ -1,6 +1,6 @@
 docker run -d \
 -p <serverip>:18080:8080 \
 --add-host=mydb:<dbip> \
---name servainterface \
+--name servainterface1 \
 --restart=unless-stopped \
-servainterface:0.1
+servainterface1:0.1
